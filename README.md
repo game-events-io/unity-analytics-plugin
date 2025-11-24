@@ -72,6 +72,23 @@ var props = new Dictionary<string, object>
 WhalyticsSDK.LogEvent("level_completed", props);
 ```
 
+#### User Properties
+
+Set properties for the current user, such as subscription status, level, or cohort.
+
+```csharp
+// Set a single user property
+WhalyticsSDK.SetUserProperty("subscription_type", "premium");
+
+// Set multiple user properties
+var userProps = new Dictionary<string, object>
+{
+    { "level", 10 },
+    { "guild", "Warriors" }
+};
+WhalyticsSDK.SetUserProperties(userProps);
+```
+
 ## Requirements
 
 - Unity 2019.4 or later.
