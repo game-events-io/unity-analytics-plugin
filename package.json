@@ -1,0 +1,12 @@
+{
+  "name": "com.whalytics.unity",
+  "version": "1.0.0",
+  "displayName": "Whalytics",
+  "description": "Whalytics Unity SDK for analytics",
+  "unity": "2019.4",
+  "author": {
+    "name": "Whalytics",
+    "email": "support@whalytics.com",
+    "url": "https://whalytics.com"
+  }
+}
