@@ -15,7 +15,7 @@ namespace GameEventsIO.Internal
                 { "operating_system", SystemInfo.operatingSystem },
                 { "platform", Application.platform.ToString() },
                 { "app_version", Application.version },
-                { "unity_version", Application.unityVersion },
+                { "engine_version", Application.unityVersion },
                 { "screen_width", Screen.width },
                 { "screen_height", Screen.height },
                 { "system_language", Application.systemLanguage.ToString() }
