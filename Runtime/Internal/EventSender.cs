@@ -26,10 +26,7 @@ namespace GameEventsIO.Internal
             StartCoroutine(SendLoop());
         }
 
-        public void SetDebugMode(bool enabled)
-        {
-            _debugMode = enabled;
-        }
+
 
         private IEnumerator SendLoop()
         {
@@ -65,11 +62,7 @@ namespace GameEventsIO.Internal
                 try
                 {
                     string content = File.ReadAllText(path);
-                    // The file content is already a JSON array "[...]"? 
-                    // Wait, in EventsDatabase.WriteBatch we did SimpleJson.Serialize(events), which produces "[{...},{...}]".
-                    // So we need to merge these arrays.
                     
-                    // Simple hack: remove leading '[' and trailing ']' and join with comma
                     if (content.Length > 2)
                     {
                         string inner = content.Substring(1, content.Length - 2);

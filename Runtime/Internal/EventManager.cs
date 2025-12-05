@@ -26,8 +26,22 @@ namespace GameEventsIO.Internal
         /// <summary>
         /// Initializes the EventManager.
         /// </summary>
-        public void Initialize(string apiKey)
+        private bool _hasStarted = false;
+
+        private void Start()
         {
+            _hasStarted = true;
+            RequestAdvertisingId();
+        }
+
+        /// <summary>
+        /// Initializes the EventManager.
+        /// </summary>
+        public void Initialize(string apiKey, bool debugMode)
+        {
+            _debugMode = debugMode;
+            if (_debugMode) Debug.Log("[GameEventsIO] EventManager Initializing...");
+
             // 1. Setup Database
             _database = new EventsDatabase();
 
@@ -52,24 +66,87 @@ namespace GameEventsIO.Internal
             LogEvent("session_start", DeviceInfo.GetDeviceInfo());
             _database.Flush(); // Flush immediately to persist session_start
             
+            // 6. Collect Advertising ID (if already started, otherwise wait for Start())
+            if (_hasStarted)
+            {
+                RequestAdvertisingId();
+            }
+            
             StartCoroutine(FlushLoop());
         }
 
-        public void SetDebugMode(bool enabled)
+        private void RequestAdvertisingId()
         {
-            _debugMode = enabled;
-            if (_networkManager != null) _networkManager.SetDebugMode(enabled);
-            if (_eventSender != null) _eventSender.SetDebugMode(enabled);
+            if (_debugMode) Debug.Log("[GameEventsIO] Requesting Advertising ID...");
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+            // On Android, we must use our custom wrapper on a background thread
+            // because Application.RequestAdvertisingIdentifierAsync is deprecated/broken
+            // and the Google Play Services call is blocking.
+            System.Threading.Tasks.Task.Run(() => 
+            {
+                string advertisingId = null;
+                string error = null;
+                bool trackingEnabled = true; // Default to true, we check limit ad tracking in Java
+
+                try 
+                {
+                    advertisingId = AndroidWrapper.GetAdvertisingIdSync();
+                }
+                catch (System.Exception e)
+                {
+                    error = e.Message;
+                }
+
+                // Dispatch back to main thread
+                UnityMainThreadDispatcher.Instance().Enqueue(() => 
+                {
+                    HandleAdvertisingId(advertisingId, trackingEnabled, error);
+                });
+            });
+#else
+            // iOS and Editor
+            Application.RequestAdvertisingIdentifierAsync((string advertisingId, bool trackingEnabled, string error) =>
+            {
+                HandleAdvertisingId(advertisingId, trackingEnabled, error);
+            });
+#endif
         }
+
+        private void HandleAdvertisingId(string advertisingId, bool trackingEnabled, string error)
+        {
+            if (_debugMode)
+            {
+                Debug.Log($"[GameEventsIO] Advertising ID received: {advertisingId}, Enabled: {trackingEnabled}, Error: {error}");
+            }
+
+            if (!string.IsNullOrEmpty(advertisingId))
+            {
+                SetUserProperty("ua_advertising_id", advertisingId);
+            }
+            
+            SetUserProperty("ua_tracking_enabled", trackingEnabled);
+
+            // Trigger MMP Attribution Check (even if ID is missing, to record organic install)
+            _networkManager.CheckAttribution(advertisingId, _userId, Application.platform.ToString(), _sessionId, (responseJson) =>
+            {
+                if (!string.IsNullOrEmpty(responseJson))
+                {
+                    if (_debugMode) Debug.Log($"[GameEventsIO] Attribution data received: {responseJson}");
+                    GameEventsIOSDK.TriggerAttributionDataReceived(responseJson);
+                }
+                else
+                {
+                        if (_debugMode) Debug.LogWarning($"[GameEventsIO] Attribution check returned empty response.");
+                }
+            });
+        }
+
+
 
         private System.Collections.IEnumerator FlushLoop()
         {
-            var wait = new WaitForSeconds(GameEventsIOConfig.SendIntervalSeconds); // Reuse send interval or add a new config?
-            // Requirement says "Every N seconds". Let's assume it's similar to send interval or we can use a hardcoded value for now if config is missing.
-            // Let's use 10 seconds or reuse SendIntervalSeconds if appropriate. 
-            // Actually, let's use a separate value or just reuse SendIntervalSeconds for simplicity as "N" wasn't specified in config.
-            // But wait, "EventSender ... M (5 например) секунд". "Каждые Н секунд ... флушит".
-            // Let's use 10 seconds for flush.
+            var wait = new WaitForSeconds(GameEventsIOConfig.SendIntervalSeconds);
             
             while (true)
             {

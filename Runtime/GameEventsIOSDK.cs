@@ -7,19 +7,19 @@ namespace GameEventsIO
     /// <summary>
     /// The main entry point for the GameEventsIO SDK.
     /// </summary>
-    /// <summary>
-    /// The main entry point for the GameEventsIO SDK.
-    /// </summary>
     public static class GameEventsIOSDK
     {
         private static EventManager _eventManager;
         private static bool _isInitialized;
 
+        private static Queue<System.Action> _actionQueue = new Queue<System.Action>();
+
         /// <summary>
         /// Initializes the GameEventsIO SDK.
         /// </summary>
         /// <param name="apiKey">Your project's API Key.</param>
-        public static void Initialize(string apiKey)
+        /// <param name="debugMode">Whether to enable debug logging.</param>
+        public static void Initialize(string apiKey, bool debugMode = false)
         {
             if (_isInitialized)
             {
@@ -30,26 +30,22 @@ namespace GameEventsIO
             GameObject go = new GameObject("GameEventsIO");
             Object.DontDestroyOnLoad(go);
             
+            go.AddComponent<GameEventsIO.Utils.UnityMainThreadDispatcher>();
             _eventManager = go.AddComponent<EventManager>();
-            _eventManager.Initialize(apiKey);
+            _eventManager.Initialize(apiKey, debugMode);
             
             _isInitialized = true;
-            Debug.Log("[GameEventsIO] Initialized.");
+            if (debugMode) Debug.Log($"[GameEventsIO] Initialized with API Key: {apiKey}");
+
+            // Flush queue
+            while (_actionQueue.Count > 0)
+            {
+                var action = _actionQueue.Dequeue();
+                action.Invoke();
+            }
         }
 
-        /// <summary>
-        /// Enables or disables debug logging.
-        /// </summary>
-        /// <param name="enabled">If true, enables debug logging.</param>
-        public static void SetDebugMode(bool enabled)
-        {
-            if (!_isInitialized)
-            {
-                Debug.LogWarning("[GameEventsIO] Not initialized. Call Initialize() first.");
-                return;
-            }
-            _eventManager.SetDebugMode(enabled);
-        }
+
 
         /// <summary>
         /// Logs a custom event.
@@ -60,7 +56,9 @@ namespace GameEventsIO
         {
             if (!_isInitialized)
             {
-                Debug.LogWarning("[GameEventsIO] Not initialized. Call Initialize() first.");
+                // Capture parameters to avoid closure issues if reused (though Dictionary is ref type)
+                // Ideally we should clone the dictionary if the user modifies it later, but for now standard closure capture.
+                _actionQueue.Enqueue(() => LogEvent(eventName, parameters));
                 return;
             }
             _eventManager.LogEvent(eventName, parameters);
@@ -75,7 +73,7 @@ namespace GameEventsIO
         {
             if (!_isInitialized)
             {
-                Debug.LogWarning("[GameEventsIO] Not initialized. Call Initialize() first.");
+                _actionQueue.Enqueue(() => SetUserProperty(property, value));
                 return;
             }
             _eventManager.SetUserProperty(property, value);
@@ -89,10 +87,30 @@ namespace GameEventsIO
         {
             if (!_isInitialized)
             {
-                Debug.LogWarning("[GameEventsIO] Not initialized. Call Init() first.");
+                _actionQueue.Enqueue(() => SetUserProperties(properties));
                 return;
             }
             _eventManager.SetUserProperties(properties);
+        }
+
+        /// <summary>
+        /// Requests App Tracking Transparency authorization (iOS only).
+        /// </summary>
+        /// <param name="callback">Callback with status (0=NotDetermined, 1=Restricted, 2=Denied, 3=Authorized).</param>
+        public static void RequestTrackingAuthorization(System.Action<int> callback)
+        {
+            ATTWrapper.RequestTrackingAuthorization(callback);
+        }
+
+        /// <summary>
+        /// Event triggered when attribution data is received from the backend.
+        /// The payload is a JSON string containing attribution details.
+        /// </summary>
+        public static event System.Action<string> OnAttributionDataReceived;
+
+        internal static void TriggerAttributionDataReceived(string json)
+        {
+            OnAttributionDataReceived?.Invoke(json);
         }
     }
 }

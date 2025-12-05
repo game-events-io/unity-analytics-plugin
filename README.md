@@ -37,11 +37,20 @@ public class GameManager : MonoBehaviour
 {
     void Awake()
     {
-        // Replace "YOUR_API_KEY" with your actual project API key from the game-events.io dashboard.
-        GameEventsIOSDK.Initialize("YOUR_API_KEY");
-        
-        // Optional: Enable debug logging to see what's happening in the Editor console.
-        GameEventsIOSDK.SetDebugMode(true);
+#if UNITY_IOS
+        // On iOS, request permission first, then initialize
+        GameEventsIOSDK.RequestTrackingAuthorization((status) => 
+        {
+            Debug.Log($"ATT Status: {status}");
+            // Initialize AFTER permission request to capture IDFA
+            // Pass 'true' as the second argument to enable debug logging
+            GameEventsIOSDK.Initialize("YOUR_API_KEY", true);
+        });
+#else
+        // On other platforms, initialize immediately
+        // Pass 'true' as the second argument to enable debug logging
+        GameEventsIOSDK.Initialize("YOUR_API_KEY", true);
+#endif
     }
 }
 ```
@@ -88,6 +97,30 @@ var userProps = new Dictionary<string, object>
 };
 GameEventsIOSDK.SetUserProperties(userProps);
 ```
+
+### MMP & Attribution (iOS/Android)
+
+To support ad attribution and campaign tracking, the SDK provides methods for App Tracking Transparency (iOS) and conversion event tracking.
+
+#### iOS App Tracking Transparency (ATT)
+
+On iOS 14.5+, you must request user authorization to access the IDFA (Advertising Identifier).
+
+```csharp
+// Call this early in your game flow, typically in Awake()
+GameEventsIOSDK.RequestTrackingAuthorization((status) =>
+{
+    Debug.Log($"ATT Status: {status}");
+    // CRITICAL: Initialize the SDK *after* the callback to ensure IDFA is captured
+    GameEventsIOSDK.Initialize("YOUR_API_KEY", true);
+});
+```
+
+**Note:** You must add `NSUserTrackingUsageDescription` to your `Info.plist` explaining why you need tracking permission.
+
+#### Conversion Events
+
+When a user installs the app after clicking an ad, the SDK automatically sends the Advertising ID to the backend. The backend then attributes the install to the ad campaign and triggers a postback to the ad network. You don't need to send any specific event manually for install attribution.
 
 ## Requirements
 
