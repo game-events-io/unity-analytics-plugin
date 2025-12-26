@@ -73,6 +73,8 @@ namespace GameEventsIO.Internal
             }
             
             StartCoroutine(FlushLoop());
+            
+            Application.logMessageReceived += OnLogMessageReceived;
         }
 
         private void RequestAdvertisingId()
@@ -80,22 +82,33 @@ namespace GameEventsIO.Internal
             if (_debugMode) Debug.Log("[GameEventsIO] Requesting Advertising ID...");
 
 #if UNITY_ANDROID && !UNITY_EDITOR
-            // On Android, we must use our custom wrapper on a background thread
-            // because Application.RequestAdvertisingIdentifierAsync is deprecated/broken
-            // and the Google Play Services call is blocking.
+            // On Android, we must use our custom wrapper on a background thread.
+            // However, grabbing 'currentActivity' must happen on the Main Thread to avoid JNI errors.
+            AndroidJavaClass unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
+            AndroidJavaObject currentActivity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity");
+
             System.Threading.Tasks.Task.Run(() => 
             {
                 string advertisingId = null;
                 string error = null;
-                bool trackingEnabled = true; // Default to true, we check limit ad tracking in Java
+                bool trackingEnabled = true;
 
                 try 
                 {
-                    advertisingId = AndroidWrapper.GetAdvertisingIdSync();
+                    // Pass the activity we grabbed on main thread
+                    advertisingId = AndroidWrapper.GetAdvertisingIdSync(currentActivity);
                 }
                 catch (System.Exception e)
                 {
                     error = e.Message;
+                }
+                finally
+                {
+                    // Clean up JNI refs - safer to do this here or back on main thread? 
+                    // AndroidJavaObject is basically just an int pointer, checking dispose docs: 
+                    // It is generally safe to dispose if we are done with it.
+                    currentActivity?.Dispose();
+                    unityPlayer?.Dispose();
                 }
 
                 // Dispatch back to main thread
@@ -218,6 +231,35 @@ namespace GameEventsIO.Internal
 
         private void OnApplicationQuit()
         {
+            _database.Flush();
+        }
+        private HashSet<string> _sentExceptionSignatures = new HashSet<string>();
+
+        private void OnDestroy()
+        {
+             Application.logMessageReceived -= OnLogMessageReceived;
+        }
+
+        private void OnLogMessageReceived(string condition, string stackTrace, LogType type)
+        {
+            if (type != LogType.Exception && type != LogType.Error && type != LogType.Assert) return;
+
+            // Simple signature to detect duplicates
+            string signature = $"{condition}\n{stackTrace}";
+            if (_sentExceptionSignatures.Contains(signature)) return;
+
+            _sentExceptionSignatures.Add(signature);
+
+            var paramsDict = new Dictionary<string, object>
+            {
+                { "error_message", condition },
+                { "stack_trace", stackTrace },
+                { "log_type", type.ToString() }
+            };
+
+            LogEvent("app_exception", paramsDict);
+            
+            // Force flush for crashes/exceptions to ensure it gets saved/sent ASAP
             _database.Flush();
         }
     }
