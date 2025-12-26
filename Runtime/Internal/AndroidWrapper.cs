@@ -10,16 +10,21 @@ namespace GameEventsIO.Internal
         /// WARNING: This method performs blocking I/O and MUST NOT be called from the main thread.
         /// </summary>
         /// <returns>The Advertising ID, or null if unavailable/error.</returns>
-        public static string GetAdvertisingIdSync()
+        public static string GetAdvertisingIdSync(AndroidJavaObject activity = null)
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
             try
             {
-                using (AndroidJavaClass unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                using (AndroidJavaClass pluginClass = new AndroidJavaClass("com.gameeventsio.android.WhalyticsAndroid"))
                 {
-                    using (AndroidJavaObject currentActivity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+                    if (activity != null)
                     {
-                        using (AndroidJavaClass pluginClass = new AndroidJavaClass("com.gameeventsio.android.WhalyticsAndroid"))
+                        return pluginClass.CallStatic<string>("getAdvertisingId", activity);
+                    }
+                    else
+                    {
+                        using (AndroidJavaClass unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                        using (AndroidJavaObject currentActivity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
                         {
                             return pluginClass.CallStatic<string>("getAdvertisingId", currentActivity);
                         }
