@@ -15,21 +15,24 @@ namespace GameEventsIO.Internal
 #if UNITY_ANDROID && !UNITY_EDITOR
             try
             {
-                using (AndroidJavaClass pluginClass = new AndroidJavaClass("com.gameeventsio.android.WhalyticsAndroid"))
-                {
                     if (activity != null)
                     {
-                        return pluginClass.CallStatic<string>("getAdvertisingId", activity);
+                        using (AndroidJavaClass client = new AndroidJavaClass("com.google.android.gms.ads.identifier.AdvertisingIdClient"))
+                        using (AndroidJavaObject adInfo = client.CallStatic<AndroidJavaObject>("getAdvertisingIdInfo", activity))
+                        {
+                            return adInfo.Call<string>("getId");
+                        }
                     }
                     else
                     {
                         using (AndroidJavaClass unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
                         using (AndroidJavaObject currentActivity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+                        using (AndroidJavaClass client = new AndroidJavaClass("com.google.android.gms.ads.identifier.AdvertisingIdClient"))
+                        using (AndroidJavaObject adInfo = client.CallStatic<AndroidJavaObject>("getAdvertisingIdInfo", currentActivity))
                         {
-                            return pluginClass.CallStatic<string>("getAdvertisingId", currentActivity);
+                            return adInfo.Call<string>("getId");
                         }
                     }
-                }
             }
             catch (Exception e)
             {
