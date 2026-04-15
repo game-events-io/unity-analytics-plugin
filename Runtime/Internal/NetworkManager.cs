@@ -15,6 +15,8 @@ namespace GameEventsIO.Internal
         private string _apiKey;
         private bool _debugMode;
 
+        private static string EscapeJsonString(string s) => JsonStringEscape.Escape(s);
+
         /// <summary>
         /// Initializes the NetworkManager.
         /// </summary>
@@ -63,7 +65,8 @@ namespace GameEventsIO.Internal
 
                 if (_debugMode)
                 {
-                    Debug.Log($"[GameEventsIO] Sending batch (Attempt {retryCount + 1}): {json}");
+                    // Avoid logging the full payload — events may carry user-identifying properties.
+                    Debug.Log($"[GameEventsIO] Sending batch (Attempt {retryCount + 1}, {bodyRaw.Length} bytes)");
                 }
 
                 yield return request.SendWebRequest();
@@ -119,20 +122,20 @@ namespace GameEventsIO.Internal
         /// </summary>
         public void CheckAttribution(string advertisingId, string userId, string platform, string sessionId, Action<string> onComplete)
         {
-            // Simple JSON serialization
+            // Manually-built JSON. Escape per RFC 8259 to prevent ID values from breaking the payload.
             var json = "{" +
-                       $"\"advertising_id\": \"{advertisingId}\"," +
-                       $"\"user_id\": \"{userId}\"," +
-                       $"\"platform\": \"{platform}\"," +
-                       $"\"session_id\": \"{sessionId}\"" +
+                       $"\"advertising_id\":\"{EscapeJsonString(advertisingId)}\"," +
+                       $"\"user_id\":\"{EscapeJsonString(userId)}\"," +
+                       $"\"platform\":\"{EscapeJsonString(platform)}\"," +
+                       $"\"session_id\":\"{EscapeJsonString(sessionId)}\"" +
                        "}";
 
             var url = GameEventsIOConfig.BackendUrl.Replace("/v1/events", "/v1/mmp/attribution");
-            
+
             if (_debugMode)
             {
                 Debug.Log($"[GameEventsIO] Checking Attribution: {url}");
-                Debug.Log($"[GameEventsIO] Attribution Payload: {json}");
+                // Don't log the raw payload — it includes advertising/device IDs.
             }
 
             StartCoroutine(PostRequestWithCallback(url, json, (response) => {
@@ -174,7 +177,7 @@ namespace GameEventsIO.Internal
     }
 
     /// <summary>
-    /// A certificate handler that bypasses validation. 
+    /// A certificate handler that bypasses validation.
     /// USE ONLY FOR DEBUGGING/DEVELOPMENT.
     /// </summary>
     public class BypassCertificateHandler : CertificateHandler
@@ -185,4 +188,33 @@ namespace GameEventsIO.Internal
             return true;
         }
     }
+
+    internal static class JsonStringEscape
+    {
+        // Minimal JSON-string escaper for the manually-constructed attribution payload.
+        public static string Escape(string s)
+        {
+            if (s == null) return string.Empty;
+            var sb = new StringBuilder(s.Length + 2);
+            foreach (var c in s)
+            {
+                switch (c)
+                {
+                    case '\\': sb.Append("\\\\"); break;
+                    case '"': sb.Append("\\\""); break;
+                    case '\b': sb.Append("\\b"); break;
+                    case '\f': sb.Append("\\f"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < 0x20) sb.AppendFormat("\\u{0:X4}", (int)c);
+                        else sb.Append(c);
+                        break;
+                }
+            }
+            return sb.ToString();
+        }
+    }
 }
+
